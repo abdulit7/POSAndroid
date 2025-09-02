@@ -241,6 +241,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.BLUE_50,
@@ -263,6 +264,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.GREEN_50,
@@ -285,6 +287,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.AMBER_50,
@@ -307,6 +310,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.PURPLE_50,
@@ -329,6 +333,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.ORANGE_100,
@@ -351,6 +356,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
                         padding=10,
                         shape=ft.RoundedRectangleBorder(radius=10),
                         width=340,
+                        height=150
                     ),
                     elevation=6,
                     color=ft.Colors.TEAL_50,
@@ -389,7 +395,7 @@ def dashboard_view(page: ft.Page, db: 'Database'):
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=20,
         ),
-        width=min(page.width, 360),
+        width=min(page.width, 380),
         alignment=ft.alignment.center,
     )
 

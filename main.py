@@ -275,7 +275,8 @@ def main(page: ft.Page):
     # Set routing handlers
     page.on_route_change = route_change
     page.on_view_pop = view_pop
-    page.go("/products")  # Start at dashboard
+    page.go("/dashboard")  # Start at dashboard
     print("Initial route set to /dashboard")
+
 
 ft.app(target=main, assets_dir="assets")

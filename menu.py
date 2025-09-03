@@ -2,17 +2,7 @@ import flet as ft
 import time
 from datetime import datetime
 import os
-
-try:
-    from jnius import autoclass
-    from escpos.printer import Dummy
-    IS_PYJNIUS_AVAILABLE = True
-except ImportError:
-    IS_PYJNIUS_AVAILABLE = False
-    Dummy = None
-
-# Standard Bluetooth SPP UUID for thermal printers
-UUID = "00001101-0000-1000-8000-00805F9B34FB"
+from setting import check_permissions, print_kitchen_receipt, print_customer_bill
 
 MENU_ITEMS = []
 ORDERS = {"dine_in": {}, "takeaway": {}, "Delivery": {}}
@@ -21,7 +11,8 @@ is_completing = False  # Debounce flag
 
 # Helper function for 5-digit order ID
 def get_next_order_id(db):
-    if IS_PYJNIUS_AVAILABLE:
+    if 'jnius' in globals():
+        print("Using timestamp-based order ID for Android")
         return f"{int(time.time()) % 99999:05d}"  # Use timestamp for Android
     order_id_file = "last_order_id.txt"
     try:
@@ -38,177 +29,6 @@ def get_next_order_id(db):
         print(f"Error generating order ID: {ex}")
         return "00001"
 
-def list_paired_devices():
-    if not IS_PYJNIUS_AVAILABLE:
-        return [("Dummy Printer", "00:11:22:33:44:55")]
-    try:
-        BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
-        adapter = BluetoothAdapter.getDefaultAdapter()
-        if adapter is None or not adapter.isEnabled():
-            return []
-        paired_devices = adapter.getBondedDevices().toArray()
-        return [(d.getName(), d.getAddress()) for d in paired_devices]
-    except Exception as ex:
-        return [(f"Error: {str(ex)}", "")]
-
-def print_to_device(device_name, receipt_data, page: ft.Page):
-    if not device_name:
-        return "No printer selected. Please select a printer in Settings."
-    if not IS_PYJNIUS_AVAILABLE:
-        return f"(TEST MODE) Printed to {device_name}"
-    try:
-        BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
-        adapter = BluetoothAdapter.getDefaultAdapter()
-        if adapter is None:
-            return "Bluetooth not supported."
-        if not adapter.isEnabled():
-            return "Bluetooth is disabled. Please enable it."
-        paired_devices = adapter.getBondedDevices().toArray()
-        target_device = None
-        for d in paired_devices:
-            if d.getName() == device_name:
-                target_device = d
-                break
-        if not target_device:
-            return f"Device '{device_name}' not found. Please pair it first."
-        UUIDClass = autoclass("java.util.UUID")
-        uuid = UUIDClass.fromString(UUID)
-        socket = target_device.createRfcommSocketToServiceRecord(uuid)
-        socket.connect()
-        output_stream = socket.getOutputStream()
-        output_stream.write(receipt_data)
-        output_stream.flush()
-        socket.close()
-        return "Printed successfully!"
-    except Exception as ex:
-        return f"Error: {str(ex)}"
-
-def check_permissions(page: ft.Page):
-    if IS_PYJNIUS_AVAILABLE:
-        try:
-            Activity = autoclass("android.app.Activity")
-            ContextCompat = autoclass("androidx.core.content.ContextCompat")
-            Permission = autoclass("android.Manifest$permission")
-            activity_host_class = autoclass("org.flet.fletapp.FletActivity")
-            activity = activity_host_class.mActivity
-            if ContextCompat.checkSelfPermission(activity, Permission.BLUETOOTH_CONNECT) != 0:
-                activity.requestPermissions([Permission.BLUETOOTH_CONNECT], 1000)
-                return "Requesting Bluetooth permission..."
-            else:
-                return "Bluetooth permission granted"
-        except Exception as ex:
-            return f"Permission check error: {str(ex)}"
-    return "Status: Ready"
-
-def generate_kitchen_receipt(order_id, items, order_type, table_number=None, customer_name=None, customer_number=None, address=None):
-    if not IS_PYJNIUS_AVAILABLE or Dummy is None:
-        receipt = f"{order_type.replace('_', ' ').title()} Receipt\nOrder ID: {order_id}\n"
-        receipt += f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        if table_number:
-            receipt += f"Table Number: {table_number}\n"
-        if customer_name:
-            receipt += f"Customer Name: {customer_name}\n"
-        if customer_number:
-            receipt += f"Customer Number: {customer_number}\n"
-        if address:
-            receipt += f"Address: {address}\n"
-        receipt += "------------------------\n"
-        for item in items:
-            if item["quantity"] > 0:
-                receipt += f"{item['name']} x {item['quantity']}\n"
-        receipt += "------------------------\n"
-        return receipt.encode()
-    p = Dummy()
-    p.set(align='center')
-    p.text(f"AKBER TIKKA\n")
-    p.text(f"{order_type.replace('_', ' ').title()} Receipt\n")
-    p.text(f"Order ID: {order_id}\n")
-    p.text(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    if table_number:
-        p.text(f"Table Number: {table_number}\n")
-    if customer_name:
-        p.text(f"Customer Name: {customer_name}\n")
-    if customer_number:
-        p.text(f"Customer Number: {customer_number}\n")
-    if address:
-        p.text(f"Address: {address}\n")
-    p.text("------------------------\n")
-    for item in items:
-        if item["quantity"] > 0:
-            p.text(f"{item['name']} x {item['quantity']}\n")
-    p.text("------------------------\n")
-    p.cut()
-    return p.output
-
-def generate_customer_bill(order_id, items, order_type, table_number=None, customer_name=None, customer_number=None, address=None):
-    if not IS_PYJNIUS_AVAILABLE or Dummy is None:
-        receipt = f"{order_type.replace('_', ' ').title()} Bill\nOrder ID: {order_id}\n"
-        receipt += f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-        if table_number:
-            receipt += f"Table Number: {table_number}\n"
-        if customer_name:
-            receipt += f"Customer Name: {customer_name}\n"
-        if customer_number:
-            receipt += f"Customer Number: {customer_number}\n"
-        if address:
-            receipt += f"Address: {address}\n"
-        receipt += "------------------------\n"
-        subtotal = 0.0
-        for item in items:
-            if item["quantity"] > 0:
-                item_total = item["quantity"] * item["price"]
-                subtotal += item_total
-                receipt += f"{item['name']} x {item['quantity']} - Rs{item_total:.2f}\n"
-        receipt += "------------------------\n"
-        receipt += f"Total: Rs{subtotal:.2f}\n"
-        return receipt.encode()
-    p = Dummy()
-    p.set(align='center')
-    p.text(f"AKBER TIKKA\n")
-    p.text(f"{order_type.replace('_', ' ').title()} Bill\n")
-    p.text(f"Order ID: {order_id}\n")
-    p.text(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-    if table_number:
-        p.text(f"Table Number: {table_number}\n")
-    if customer_name:
-        p.text(f"Customer Name: {customer_name}\n")
-    if customer_number:
-        p.text(f"Customer Number: {customer_number}\n")
-    if address:
-        p.text(f"Address: {address}\n")
-    p.text("------------------------\n")
-    subtotal = 0.0
-    for item in items:
-        if item["quantity"] > 0:
-            item_total = item["quantity"] * item["price"]
-            subtotal += item_total
-            p.text(f"{item['name']} x {item['quantity']} - Rs{item_total:.2f}\n")
-    p.text("------------------------\n")
-    p.text(f"Total: Rs{subtotal:.2f}\n")
-    p.text("Thank you! Come again\n\n\n")
-    p.cut()
-    return p.output
-
-def print_kitchen_receipt(order_id, items, page: ft.Page, table_number=None, customer_name=None, customer_number=None, address=None):
-    if not items:
-        return "No items in order!"
-    try:
-        selected_printer = page.client_storage.get("selected_printer")
-        receipt_data = generate_kitchen_receipt(order_id, items, current_order_type, table_number, customer_name, customer_number, address)
-        return print_to_device(selected_printer, receipt_data, page)
-    except Exception as ex:
-        return f"Error printing kitchen receipt: {str(ex)}"
-
-def print_customer_bill(order_id, items, page: ft.Page, table_number=None, customer_name=None, customer_number=None, address=None):
-    if not items:
-        return "No items in order!"
-    try:
-        selected_printer = page.client_storage.get("selected_printer")
-        bill_data = generate_customer_bill(order_id, items, current_order_type, table_number, customer_name, customer_number, address)
-        return print_to_device(selected_printer, bill_data, page)
-    except Exception as ex:
-        return f"Error printing customer bill: {str(ex)}"
-
 def menu_view(page: ft.Page, db: 'Database'):
     page.title = "Menu"
     page.bgcolor = ft.Colors.ORANGE_50
@@ -217,7 +37,8 @@ def menu_view(page: ft.Page, db: 'Database'):
 
     global MENU_ITEMS
     MENU_ITEMS = db.get_menu()
-    current_order_type = "dine_in"
+    current_order_type = page.client_storage.get("current_order_type") or "dine_in"
+    print(f"Initial order type: {current_order_type}")
     current_order = ORDERS[current_order_type]
     order_items = {}
 
@@ -226,7 +47,9 @@ def menu_view(page: ft.Page, db: 'Database'):
     def switch_order_type(e):
         nonlocal current_order_type, current_order
         current_order_type = ORDER_TYPES[e.control.selected_index]
+        page.client_storage.set("current_order_type", current_order_type)
         current_order = ORDERS[current_order_type]
+        print(f"Switched to order type: {current_order_type}")
         update_order_display()
         update_order_summary()
 
@@ -254,6 +77,7 @@ def menu_view(page: ft.Page, db: 'Database'):
 
     def update_order_display():
         order_type_display.value = f"Current Mode: {current_order_type.replace('_', ' ').title()}"
+        print(f"Updated order type display: {order_type_display.value}")
         page.update()
 
     def complete_order(e):
@@ -262,13 +86,16 @@ def menu_view(page: ft.Page, db: 'Database'):
             print("Debounce: Complete button already processing")
             return
         if not order_items:
+            print("No items in order_items")
             page.snack_bar = ft.SnackBar(ft.Text("No items to complete!", color=ft.Colors.RED_500), open=True)
             page.update()
             return
         show_order_details_dialog("complete")
 
     def complete_order_with_details(order_id, order_details, table_number, customer_name, customer_number, address):
+        print(f"Completing order ID: {order_id}, Details: {order_details}")
         if not order_details:
+            print("No order details provided")
             page.snack_bar = ft.SnackBar(ft.Text("No items to complete!", color=ft.Colors.RED_500), open=True)
             page.update()
             return
@@ -288,9 +115,11 @@ def menu_view(page: ft.Page, db: 'Database'):
             db.add_order(order_id, current_order_type, order_details, date_time, table_number, customer_name, customer_number, address)
             print(f"Saved order to database: Order ID={order_id}, Type={current_order_type}, Items={order_details}, DateTime={date_time}, Table={table_number}, Name={customer_name}, Number={customer_number}, Address={address}")
             status = print_kitchen_receipt(order_id, order_details, page, table_number, customer_name, customer_number, address)
+            print(f"Kitchen receipt status: {status}")
             page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Kitchen receipt printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
             page.update()
             status = print_customer_bill(order_id, order_details, page, table_number, customer_name, customer_number, address)
+            print(f"Customer bill status: {status}")
             page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Customer bill printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
             page.update()
             page.snack_bar = ft.SnackBar(ft.Text(f"Order {order_id} completed!", color=ft.Colors.GREEN_600), open=True)
@@ -302,7 +131,7 @@ def menu_view(page: ft.Page, db: 'Database'):
             page.update()
 
     def show_order_details_dialog(mode):
-        print(f"Opening order details dialog for {mode}, overlay size before: {len(page.overlay)}")
+        print(f"Opening order details dialog for mode: {mode}, order_items: {order_items}")
         table_number_field = ft.TextField(label="Table Number", width=200, visible=current_order_type == "dine_in")
         customer_name_field = ft.TextField(label="Customer Name", width=200, visible=current_order_type in ["takeaway", "Delivery"])
         customer_number_field = ft.TextField(label="Customer Number", width=200, visible=current_order_type == "Delivery")
@@ -321,13 +150,17 @@ def menu_view(page: ft.Page, db: 'Database'):
             customer_number = customer_number_field.value.strip() or None if current_order_type == "Delivery" else None
             address = address_field.value.strip() or None if current_order_type == "Delivery" else None
 
+            print(f"Validating: Table={table_number}, Name={customer_name}, Number={customer_number}, Address={address}")
+
             if current_order_type == "dine_in" and not table_number:
+                print("Validation failed: Table number required for dine-in")
                 page.snack_bar = ft.SnackBar(ft.Text("Table number is required for dine-in!", color=ft.Colors.RED_500), open=True)
                 page.update()
                 if mode == "complete":
                     is_completing = False
                 return
             if current_order_type == "takeaway" and not customer_name:
+                print("Validation failed: Customer name required for takeaway")
                 page.snack_bar = ft.SnackBar(ft.Text("Customer name is required for takeaway!", color=ft.Colors.RED_500), open=True)
                 page.update()
                 if mode == "complete":
@@ -343,13 +176,16 @@ def menu_view(page: ft.Page, db: 'Database'):
                 {"name": name, "quantity": qty, "price": next((i["price"] for i in MENU_ITEMS if i["name"] == name), 0), "total": qty * next((i["price"] for i in MENU_ITEMS if i["name"] == name), 0)}
                 for name, qty in order_items.items() if qty > 0
             ]
+            print(f"Generated order details: {order_details}")
 
             if mode == "receipt":
                 status = print_kitchen_receipt(order_id, order_details, page, table_number, customer_name, customer_number, address)
+                print(f"Receipt print status: {status}")
                 page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Kitchen receipt printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
                 page.update()
             elif mode == "bill":
                 status = print_customer_bill(order_id, order_details, page, table_number, customer_name, customer_number, address)
+                print(f"Bill print status: {status}")
                 page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Customer bill printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
                 page.update()
             elif mode == "complete":
@@ -391,6 +227,7 @@ def menu_view(page: ft.Page, db: 'Database'):
     def update_menu_container():
         global MENU_ITEMS
         MENU_ITEMS = db.get_menu()
+        print(f"Updating menu container with {len(MENU_ITEMS)} items")
         menu_container.controls.clear()
         for item in MENU_ITEMS:
             menu_container.controls.append(
@@ -445,32 +282,36 @@ def menu_view(page: ft.Page, db: 'Database'):
             display_value.value = digit
         else:
             display_value.value = current + digit
+        print(f"Updated quantity display: {display_value.value}")
         page.update()
 
     def close_quantity_dialog(page, dialog):
         dialog.open = False
         display_value.value = "0"
+        print("Quantity dialog closed")
         page.update()
-        print(f"Quantity dialog closed, overlay size: {len(page.overlay)}")
 
     def add_quantity(page, dialog, item_name, qty):
         try:
             quantity = int(qty)
             if quantity <= 0:
+                print("Invalid quantity: must be greater than 0")
                 page.snack_bar = ft.SnackBar(ft.Text("Quantity must be greater than 0", color=ft.Colors.RED_500), open=True)
                 page.update()
                 return
             if item_name not in order_items:
                 order_items[item_name] = 0
             order_items[item_name] = quantity
+            print(f"Added {quantity} {item_name} to order_items")
             page.snack_bar = ft.SnackBar(ft.Text(f"Added {quantity} {item_name} to order", color=ft.Colors.GREEN_600), open=True)
             update_order_summary()
         except ValueError:
+            print("Invalid quantity: not a number")
             page.snack_bar = ft.SnackBar(ft.Text("Please enter a valid number", color=ft.Colors.RED_500), open=True)
         close_quantity_dialog(page, dialog)
 
     def show_quantity_dialog(page, item_name):
-        print(f"Opening quantity dialog for {item_name}, overlay size before: {len(page.overlay)}")
+        print(f"Opening quantity dialog for {item_name}")
         dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text(f"Select Quantity for {item_name}", color=ft.Colors.BROWN_800, size=16),

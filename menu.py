@@ -21,6 +21,8 @@ is_completing = False  # Debounce flag
 
 # Helper function for 5-digit order ID
 def get_next_order_id(db):
+    if IS_PYJNIUS_AVAILABLE:
+        return f"{int(time.time()) % 99999:05d}"  # Use timestamp for Android
     order_id_file = "last_order_id.txt"
     try:
         if os.path.exists(order_id_file):
@@ -49,7 +51,9 @@ def list_paired_devices():
     except Exception as ex:
         return [(f"Error: {str(ex)}", "")]
 
-def print_to_device(device_name, receipt_data):
+def print_to_device(device_name, receipt_data, page: ft.Page):
+    if not device_name:
+        return "No printer selected. Please select a printer in Settings."
     if not IS_PYJNIUS_AVAILABLE:
         return f"(TEST MODE) Printed to {device_name}"
     try:
@@ -185,21 +189,23 @@ def generate_customer_bill(order_id, items, order_type, table_number=None, custo
     p.cut()
     return p.output
 
-def print_kitchen_receipt(order_id, items, table_number=None, customer_name=None, customer_number=None, address=None):
+def print_kitchen_receipt(order_id, items, page: ft.Page, table_number=None, customer_name=None, customer_number=None, address=None):
     if not items:
         return "No items in order!"
     try:
+        selected_printer = page.client_storage.get("selected_printer")
         receipt_data = generate_kitchen_receipt(order_id, items, current_order_type, table_number, customer_name, customer_number, address)
-        return print_to_device("Printer", receipt_data)
+        return print_to_device(selected_printer, receipt_data, page)
     except Exception as ex:
         return f"Error printing kitchen receipt: {str(ex)}"
 
-def print_customer_bill(order_id, items, table_number=None, customer_name=None, customer_number=None, address=None):
+def print_customer_bill(order_id, items, page: ft.Page, table_number=None, customer_name=None, customer_number=None, address=None):
     if not items:
         return "No items in order!"
     try:
+        selected_printer = page.client_storage.get("selected_printer")
         bill_data = generate_customer_bill(order_id, items, current_order_type, table_number, customer_name, customer_number, address)
-        return print_to_device("Printer", bill_data)
+        return print_to_device(selected_printer, bill_data, page)
     except Exception as ex:
         return f"Error printing customer bill: {str(ex)}"
 
@@ -281,10 +287,10 @@ def menu_view(page: ft.Page, db: 'Database'):
             date_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             db.add_order(order_id, current_order_type, order_details, date_time, table_number, customer_name, customer_number, address)
             print(f"Saved order to database: Order ID={order_id}, Type={current_order_type}, Items={order_details}, DateTime={date_time}, Table={table_number}, Name={customer_name}, Number={customer_number}, Address={address}")
-            status = print_kitchen_receipt(order_id, order_details, table_number, customer_name, customer_number, address)
+            status = print_kitchen_receipt(order_id, order_details, page, table_number, customer_name, customer_number, address)
             page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Kitchen receipt printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
             page.update()
-            status = print_customer_bill(order_id, order_details, table_number, customer_name, customer_number, address)
+            status = print_customer_bill(order_id, order_details, page, table_number, customer_name, customer_number, address)
             page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Customer bill printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
             page.update()
             page.snack_bar = ft.SnackBar(ft.Text(f"Order {order_id} completed!", color=ft.Colors.GREEN_600), open=True)
@@ -332,18 +338,18 @@ def menu_view(page: ft.Page, db: 'Database'):
             page.update()
             print(f"Order details dialog closed, overlay size: {len(page.overlay)}")
 
-            order_id = get_next_order_id(db) if mode != "complete" else get_next_order_id(db)
+            order_id = get_next_order_id(db)
             order_details = [
                 {"name": name, "quantity": qty, "price": next((i["price"] for i in MENU_ITEMS if i["name"] == name), 0), "total": qty * next((i["price"] for i in MENU_ITEMS if i["name"] == name), 0)}
                 for name, qty in order_items.items() if qty > 0
             ]
 
             if mode == "receipt":
-                status = print_kitchen_receipt(order_id, order_details, table_number, customer_name, customer_number, address)
+                status = print_kitchen_receipt(order_id, order_details, page, table_number, customer_name, customer_number, address)
                 page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Kitchen receipt printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
                 page.update()
             elif mode == "bill":
-                status = print_customer_bill(order_id, order_details, table_number, customer_name, customer_number, address)
+                status = print_customer_bill(order_id, order_details, page, table_number, customer_name, customer_number, address)
                 page.snack_bar = ft.SnackBar(ft.Text(status if "Error" in status else "Customer bill printed!", color=ft.Colors.RED_500 if "Error" in status else ft.Colors.GREEN_600), open=True)
                 page.update()
             elif mode == "complete":
